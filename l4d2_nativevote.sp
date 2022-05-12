@@ -5,7 +5,7 @@
 #include <sdktools>
 #include <l4d2_nativevote>
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 
 enum struct VoteData
 {
@@ -24,7 +24,7 @@ VoteData g_VoteData;
 int g_iVoteController;
 PrivateForward g_hFwd;
 ConVar g_cvInitiatorAutoVoteYes;
-Handle g_hVoteCheck;
+Handle g_hEndVoteTimer;
 
 public Plugin myinfo = 
 {
@@ -71,13 +71,13 @@ public void OnPluginStart()
 
 public void OnMapStart()
 {
-	delete g_hVoteCheck;
+	delete g_hEndVoteTimer;
 	g_VoteData.bVoteInProgress = false;
 }
 
 public void OnMapEnd()
 {
-	delete g_hVoteCheck;
+	delete g_hEndVoteTimer;
 	g_VoteData.bVoteInProgress = false;
 }
 
@@ -156,34 +156,19 @@ any Native_DisplayVote(Handle plugin, int numParams)
 	if (vote != Valid_Vote || !g_VoteData.bVoteInProgress) return false;
 
 	int numClients = GetNativeCell(3);
-	int[] clients = new int[numClients];
-	GetNativeArray(2, clients, numClients);
-
-	int initiator = g_VoteData.iInitiator;
-	char sName[128];
-	if (initiator > 0 && initiator <= MaxClients && IsClientInGame(initiator))
-	{
-		FormatEx(sName, sizeof(sName), "%N", initiator);
-		if (g_cvInitiatorAutoVoteYes.BoolValue)
-			CreateTimer(0.1, InitiatorVote_Timer, GetClientUserId(initiator));
-	}
+	int[] buffer = new int[numClients];
+	GetNativeArray(2, buffer, numClients);
 
 	int client;
+	int[] clients = new int[numClients];
+	
 	for (int i = 0; i < numClients; i++)
 	{
-		client = clients[i];
+		client = buffer[i];
 		if (client > 0 && client <= MaxClients && IsClientInGame(client))
 		{
-			g_VoteData.iPlayerCount++;
+			clients[g_VoteData.iPlayerCount++] = client;
 			g_VoteData.bCanVote[client] = true;
-
-			BfWrite bf = UserMessageToBfWrite(StartMessageOne("VoteStart", client, USERMSG_RELIABLE));
-			bf.WriteByte(-1);							// team. Valve represents no team as -1
-			bf.WriteByte(initiator);					// initiator
-			bf.WriteString("#L4D_TargetID_Player");		// issue. L4D_TargetID_Player which will let you create any vote you want.
-			bf.WriteString(g_VoteData.sDisplayText);	// Vote issue text
-			bf.WriteString(sName);						// initiatorName
-			EndMessage();
 		}
 	}
 	
@@ -193,16 +178,34 @@ any Native_DisplayVote(Handle plugin, int numParams)
 		return false;
 	}
 	
+	int initiator = g_VoteData.iInitiator;
+	char sName[128];
+	if (initiator > 0 && initiator <= MaxClients && IsClientInGame(initiator))
+	{
+		FormatEx(sName, sizeof(sName), "%N", initiator);
+		if (g_cvInitiatorAutoVoteYes.BoolValue)
+			CreateTimer(0.1, InitiatorVote_Timer, GetClientUserId(initiator));
+	}
+
+	BfWrite bf = UserMessageToBfWrite(StartMessage("VoteStart", clients, g_VoteData.iPlayerCount, USERMSG_RELIABLE));
+	bf.WriteByte(-1);							// team. Valve represents no team as -1
+	bf.WriteByte(initiator);					// initiator
+	bf.WriteString("#L4D_TargetID_Player");		// issue. L4D_TargetID_Player which will let you create any vote you want.
+	bf.WriteString(g_VoteData.sDisplayText);	// Vote issue text
+	bf.WriteString(sName);						// initiatorName
+	EndMessage();
+
+	delete g_hEndVoteTimer;
+	g_hEndVoteTimer = CreateTimer(float(GetNativeCell(4)), EndVote_Timer);
+
 	UpdateVotes(VoteAction_Start, initiator);
-
-	delete g_hVoteCheck;
-	g_hVoteCheck = CreateTimer(float(GetNativeCell(4)), Timer_VoteCheck);
-
 	return true;
 }
 
 Action InitiatorVote_Timer(Handle timer, int userid)
 {
+	if (!g_VoteData.bVoteInProgress) return Plugin_Continue;
+
 	int client = GetClientOfUserId(userid);
 	if (client > 0 && client <= MaxClients && IsClientInGame(client))
 		FakeClientCommand(client, "Vote Yes");
@@ -224,13 +227,13 @@ int Native_GetPlayerCount(Handle plugin, int numParams)
 	return g_VoteData.iPlayerCount;
 }
 
-Action Timer_VoteCheck(Handle timer)
+Action EndVote_Timer(Handle timer)
 {
 	if (g_VoteData.bVoteInProgress)
 	{
 		UpdateVotes(VoteAction_End, VOTEEND_TIMEEND);
 	}
-	g_hVoteCheck = null;
+	g_hEndVoteTimer = null;
 	return Plugin_Continue;
 }
 
@@ -303,7 +306,7 @@ int Native_SetPass(Handle plugin, int numParams)
 	if (numParams > 1)
 		FormatNativeString(0, 2, 3, sizeof(sMsg), _, sMsg);
 
-	BfWrite bf = UserMessageToBfWrite(StartMessageAll("VotePass"));
+	BfWrite bf = UserMessageToBfWrite(StartMessageAll("VotePass", USERMSG_RELIABLE));
 	bf.WriteByte(-1);
 	bf.WriteString("#L4D_TargetID_Player");
 	bf.WriteString(sMsg);
@@ -314,7 +317,7 @@ int Native_SetPass(Handle plugin, int numParams)
 
 int Native_SetFail(Handle plugin, int numParams)
 {
-	BfWrite bf = UserMessageToBfWrite(StartMessageAll("VoteFail"));
+	BfWrite bf = UserMessageToBfWrite(StartMessageAll("VoteFail", USERMSG_RELIABLE));
 	bf.WriteByte(-1);
 	EndMessage();
 	CreateTimer(1.0, ResetVote_Timer);
@@ -330,7 +333,7 @@ Action ResetVote_Timer(Handle timer)
 void ResetVote()
 {
 	g_VoteData.bVoteInProgress = false;
-	delete g_hVoteCheck;
+	delete g_hEndVoteTimer;
 	delete g_hFwd;
 
 	if (CheckVoteController())
