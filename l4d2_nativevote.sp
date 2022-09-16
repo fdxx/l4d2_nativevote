@@ -266,7 +266,7 @@ void UpdateVotes(VoteAction action, int param1 = -1, int param2 = -1)
 {
 	if (!g_VoteData.bVoteInProgress) return;
 
-	Event event = CreateEvent("vote_changed");
+	Event event = CreateEvent("vote_changed", true);
 	event.SetInt("yesVotes", g_VoteData.iYesCount);
 	event.SetInt("noVotes", g_VoteData.iNoCount);
 	event.SetInt("potentialVotes", g_VoteData.iPlayerCount);
