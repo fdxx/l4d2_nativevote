@@ -1,14 +1,7 @@
-
 #if defined _l4d2_nativevote_included
  #endinput
 #endif
 #define _l4d2_nativevote_included
-
-enum L4D2NativeVote
-{
-	Invalid_Vote = 0,
-	Valid_Vote = 1,
-};
 
 enum VoteAction
 {
@@ -47,7 +40,7 @@ native bool L4D2NativeVote_IsAllowNewVote();
  */
 typedef L4D2VoteHandler = function void (L4D2NativeVote vote, VoteAction action, int param1, int param2);
 
-// methodmap of enum L4D2NativeVote
+
 methodmap L4D2NativeVote 
 {
 	// Creates a new NativeVote.
@@ -106,13 +99,13 @@ methodmap L4D2NativeVote
 	//						Or vote is invalid, Or there are other vote in progress.
 	public native bool DisplayVote(int[] clients, int numClients, int time);
 
-	// Get current number of yes votes.
+	// Get the current affirmative vote.
 	property int YesCount
 	{
 		public native get();
 	}
 
-	// Get current number of no votes.
+	// Get the current negative vote.
 	property int NoCount
 	{
 		public native get();
@@ -130,7 +123,7 @@ methodmap L4D2NativeVote
 	//
 	// @param fmt           text displayed on the vote screen after passed.
 	// @param ...           text string arguments.
-	public native void SetPass(const char[] fmt="", any ...);
+	public native void SetPass(const char[] fmt, any ...);
 
 	// Set vote Failed.
 	// You must manually call SetPass or SetFail in L4D2VoteHandler.

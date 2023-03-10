@@ -5,11 +5,12 @@
 #include <sdktools>
 #include <l4d2_nativevote>
 
-#define VERSION "0.2"
+#define VERSION "0.3"
 
 enum struct VoteData
 {
 	bool bVoteInProgress;
+	bool bVoteStart;
 	char sDisplayText[64];
 	any Value;
 	char sInfoStr[512];
@@ -64,7 +65,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 
 public void OnPluginStart()
 {
-	CreateConVar("l4d2_nativevote_version", VERSION, "version", FCVAR_NONE);
+	CreateConVar("l4d2_nativevote_version", VERSION, "version", FCVAR_NOTIFY);
 	g_cvInitiatorAutoVoteYes = CreateConVar("l4d2_nativevote_initiator_auto_voteyes", "1", "If 1, initiator will auto vote yes", FCVAR_NONE, true, 0.0, true, 1.0);
 	AddCommandListener(vote_Listener, "vote");
 }
@@ -87,7 +88,7 @@ any Native_CreateVote(Handle plugin, int numParams)
 	if (!IsAllowNewVote())
 	{
 		ThrowNativeError(SP_ERROR_NATIVE, "Failed to create new vote");
-		return Invalid_Vote;
+		return 0;
 	}
 
 	ResetVote();
@@ -96,24 +97,24 @@ any Native_CreateVote(Handle plugin, int numParams)
 	SetVoteEntityStatus(0);
 	g_VoteData.bVoteInProgress = true;
 
-	return Valid_Vote;
+	return 1;
 }
 
 // public native void SetDisplayText(const char[] fmt, any ...);
-int Native_SetDisplayText(Handle plugin, int numParams)
+any Native_SetDisplayText(Handle plugin, int numParams)
 {
 	FormatNativeString(0, 2, 3, sizeof(g_VoteData.sDisplayText), _, g_VoteData.sDisplayText);
 	return 0;
 }
 
 // public native void GetDisplayText(char[] buffer, int maxlength);
-int Native_GetDisplayText(Handle plugin, int numParams)
+any Native_GetDisplayText(Handle plugin, int numParams)
 {
 	SetNativeString(2, g_VoteData.sDisplayText, GetNativeCell(3));
 	return 0;
 }
 
-int Native_SetValue(Handle plugin, int numParams)
+any Native_SetValue(Handle plugin, int numParams)
 {
 	g_VoteData.Value = GetNativeCell(2);
 	return 0;
@@ -125,26 +126,26 @@ any Native_GetValue(Handle plugin, int numParams)
 }
 
 // public native void SetInfoString(const char[] fmt, any ...);
-int Native_SetInfoStr(Handle plugin, int numParams)
+any Native_SetInfoStr(Handle plugin, int numParams)
 {
 	FormatNativeString(0, 2, 3, sizeof(g_VoteData.sInfoStr), _, g_VoteData.sInfoStr);
 	return 0;
 }
 
 // public native void GetInfoString(char[] buffer, int maxlength);
-int Native_GetInfoStr(Handle plugin, int numParams)
+any Native_GetInfoStr(Handle plugin, int numParams)
 {
 	SetNativeString(2, g_VoteData.sInfoStr, GetNativeCell(3));
 	return 0;
 }
 
-int Native_SetInitiator(Handle plugin, int numParams)
+any Native_SetInitiator(Handle plugin, int numParams)
 {
 	g_VoteData.iInitiator = GetNativeCell(2);
 	return 0;
 }
 
-int Native_GetInitiator(Handle plugin, int numParams)
+any Native_GetInitiator(Handle plugin, int numParams)
 {
 	return g_VoteData.iInitiator;
 }
@@ -152,8 +153,8 @@ int Native_GetInitiator(Handle plugin, int numParams)
 // public native bool DisplayVote(int[] clients, int numClients, int time);
 any Native_DisplayVote(Handle plugin, int numParams)
 {
-	L4D2NativeVote vote = GetNativeCell(1);
-	if (vote != Valid_Vote || !g_VoteData.bVoteInProgress) return false;
+	if (!GetNativeCell(1) || !g_VoteData.bVoteInProgress || g_VoteData.bVoteStart)
+		return false;
 
 	int numClients = GetNativeCell(3);
 	int[] buffer = new int[numClients];
@@ -195,8 +196,11 @@ any Native_DisplayVote(Handle plugin, int numParams)
 	bf.WriteString(sName);						// initiatorName
 	EndMessage();
 
+	g_VoteData.bVoteStart = true;
+
+	int time = GetNativeCell(4);
 	delete g_hEndVoteTimer;
-	g_hEndVoteTimer = CreateTimer(float(GetNativeCell(4)), EndVote_Timer);
+	g_hEndVoteTimer = CreateTimer(float(time), EndVote_Timer);
 
 	UpdateVotes(VoteAction_Start, initiator);
 	return true;
@@ -204,7 +208,8 @@ any Native_DisplayVote(Handle plugin, int numParams)
 
 Action InitiatorVote_Timer(Handle timer, int userid)
 {
-	if (!g_VoteData.bVoteInProgress) return Plugin_Continue;
+	if (!g_VoteData.bVoteInProgress)
+		return Plugin_Continue;
 
 	int client = GetClientOfUserId(userid);
 	if (client > 0 && client <= MaxClients && IsClientInGame(client))
@@ -212,17 +217,17 @@ Action InitiatorVote_Timer(Handle timer, int userid)
 	return Plugin_Continue;
 }
 
-int Native_GetYesCount(Handle plugin, int numParams)
+any Native_GetYesCount(Handle plugin, int numParams)
 {
 	return g_VoteData.iYesCount;
 }
 
-int Native_GetNoCount(Handle plugin, int numParams)
+any Native_GetNoCount(Handle plugin, int numParams)
 {
 	return g_VoteData.iNoCount;
 }
 
-int Native_GetPlayerCount(Handle plugin, int numParams)
+any Native_GetPlayerCount(Handle plugin, int numParams)
 {
 	return g_VoteData.iPlayerCount;
 }
@@ -245,12 +250,12 @@ Action vote_Listener(int client, const char[] command, int argc)
 		char sVote[4];
 		if (GetCmdArgString(sVote, sizeof(sVote)) > 1)
 		{
-			if (strcmp(sVote, "Yes") == 0)
+			if (strcmp(sVote, "Yes", false) == 0)
 			{
 				g_VoteData.iYesCount++;
 				UpdateVotes(VoteAction_PlayerVoted, client, VOTE_YES);
 			}
-			else if (strcmp(sVote, "No") == 0)
+			else if (strcmp(sVote, "No", false) == 0)
 			{
 				g_VoteData.iNoCount++;
 				UpdateVotes(VoteAction_PlayerVoted, client, VOTE_NO);
@@ -277,7 +282,7 @@ void UpdateVotes(VoteAction action, int param1 = -1, int param2 = -1)
 		case VoteAction_Start, VoteAction_PlayerVoted:
 		{
 			Call_StartForward(g_hFwd);
-			Call_PushCell(Valid_Vote);
+			Call_PushCell(0);
 			Call_PushCell(action);
 			Call_PushCell(param1);
 			Call_PushCell(param2);
@@ -291,7 +296,7 @@ void UpdateVotes(VoteAction action, int param1 = -1, int param2 = -1)
 		case VoteAction_End:
 		{
 			Call_StartForward(g_hFwd);
-			Call_PushCell(Valid_Vote);
+			Call_PushCell(0);
 			Call_PushCell(action);
 			Call_PushCell(param1);
 			Call_PushCell(param2);
@@ -303,8 +308,7 @@ void UpdateVotes(VoteAction action, int param1 = -1, int param2 = -1)
 int Native_SetPass(Handle plugin, int numParams)
 {
 	char sMsg[64];
-	if (numParams > 1)
-		FormatNativeString(0, 2, 3, sizeof(sMsg), _, sMsg);
+	FormatNativeString(0, 2, 3, sizeof(sMsg), _, sMsg);
 
 	BfWrite bf = UserMessageToBfWrite(StartMessageAll("VotePass", USERMSG_RELIABLE));
 	bf.WriteByte(-1);
@@ -333,6 +337,8 @@ Action ResetVote_Timer(Handle timer)
 void ResetVote()
 {
 	g_VoteData.bVoteInProgress = false;
+	g_VoteData.bVoteStart = false;
+
 	delete g_hEndVoteTimer;
 	delete g_hFwd;
 
@@ -358,16 +364,16 @@ any Native_IsAllowNewVote(Handle plugin, int numParams)
 
 bool IsAllowNewVote()
 {
-	if (CheckVoteController())
+	if (!g_VoteData.bVoteInProgress && CheckVoteController())
 	{
-		return GetVoteEntityStatus() == -1 && !g_VoteData.bVoteInProgress;
+		return GetVoteEntityStatus() == -1;
 	}
 	return false;
 }
 
 bool CheckVoteController()
 {
-	g_iVoteController = FindEntityByClassname(-1, "vote_controller");
+	g_iVoteController = FindEntityByClassname(MaxClients+1, "vote_controller");
 	return g_iVoteController != -1;
 }
 
