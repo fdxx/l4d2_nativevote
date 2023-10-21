@@ -5,7 +5,7 @@
 #include <sdktools>
 #include <l4d2_nativevote>
 
-#define VERSION "0.3"
+#define VERSION "0.4"
 
 enum struct VoteData
 {
@@ -43,16 +43,22 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 
 	CreateNative("L4D2NativeVote.L4D2NativeVote", Native_CreateVote);
 	CreateNative("L4D2NativeVote.SetDisplayText", Native_SetDisplayText);
+	CreateNative("L4D2NativeVote.SetTitle", Native_SetDisplayText);
 	CreateNative("L4D2NativeVote.GetDisplayText", Native_GetDisplayText);
+	CreateNative("L4D2NativeVote.GetTitle", Native_GetDisplayText);
 	CreateNative("L4D2NativeVote.Value.set", Native_SetValue);
 	CreateNative("L4D2NativeVote.Value.get", Native_GetValue);
 	CreateNative("L4D2NativeVote.SetInfoString", Native_SetInfoStr);
+	CreateNative("L4D2NativeVote.SetInfo", Native_SetInfoStr);
 	CreateNative("L4D2NativeVote.GetInfoString", Native_GetInfoStr);
+	CreateNative("L4D2NativeVote.GetInfo", Native_GetInfoStr);
 	CreateNative("L4D2NativeVote.Initiator.set", Native_SetInitiator);
 	CreateNative("L4D2NativeVote.Initiator.get", Native_GetInitiator);
 	CreateNative("L4D2NativeVote.DisplayVote", Native_DisplayVote);
 	CreateNative("L4D2NativeVote.YesCount.get", Native_GetYesCount);
+	CreateNative("L4D2NativeVote.YesCount.set", Native_SetYesCount);
 	CreateNative("L4D2NativeVote.NoCount.get", Native_GetNoCount);
+	CreateNative("L4D2NativeVote.NoCount.set", Native_SetNoCount);
 	CreateNative("L4D2NativeVote.PlayerCount.get", Native_GetPlayerCount);
 	CreateNative("L4D2NativeVote.SetPass", Native_SetPass);
 	CreateNative("L4D2NativeVote.SetFail", Native_SetFail);
@@ -222,9 +228,21 @@ any Native_GetYesCount(Handle plugin, int numParams)
 	return g_VoteData.iYesCount;
 }
 
+any Native_SetYesCount(Handle plugin, int numParams)
+{
+	g_VoteData.iYesCount = GetNativeCell(2);
+	return 0;
+}
+
 any Native_GetNoCount(Handle plugin, int numParams)
 {
 	return g_VoteData.iNoCount;
+}
+
+any Native_SetNoCount(Handle plugin, int numParams)
+{
+	g_VoteData.iNoCount = GetNativeCell(2);
+	return 0;
 }
 
 any Native_GetPlayerCount(Handle plugin, int numParams)
@@ -290,6 +308,9 @@ void UpdateVotes(VoteAction action, int param1 = -1, int param2 = -1)
 
 			if (g_VoteData.iYesCount + g_VoteData.iNoCount >= g_VoteData.iPlayerCount)
 			{
+				for (int i; i <= MaxClients; i++)
+					g_VoteData.bCanVote[i] = false;
+					
 				UpdateVotes(VoteAction_End, VOTEEND_FULLVOTED);
 			}
 		}
