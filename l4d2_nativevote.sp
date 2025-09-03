@@ -5,7 +5,7 @@
 #include <sdktools>
 #include <l4d2_nativevote>
 
-#define VERSION "0.4"
+#define VERSION "0.5"
 
 enum struct VoteData
 {
@@ -272,11 +272,13 @@ Action vote_Listener(int client, const char[] command, int argc)
 			{
 				g_VoteData.iYesCount++;
 				UpdateVotes(VoteAction_PlayerVoted, client, VOTE_YES);
+				SendClientVoteRegistered(client, 1);
 			}
 			else if (strcmp(sVote, "No", false) == 0)
 			{
 				g_VoteData.iNoCount++;
 				UpdateVotes(VoteAction_PlayerVoted, client, VOTE_NO);
+				SendClientVoteRegistered(client, 0);
 			}
 		}
 	}
@@ -408,4 +410,9 @@ void SetVoteEntityStatus(int value)
 	SetEntProp(g_iVoteController, Prop_Send, "m_activeIssueIndex", value);
 }
 
-
+void SendClientVoteRegistered(int client, int state)
+{
+	BfWrite bf = UserMessageToBfWrite(StartMessageOne("VoteRegistered", client, USERMSG_RELIABLE));
+	bf.WriteByte(state);
+	EndMessage();
+}
